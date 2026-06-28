@@ -41,7 +41,7 @@ async def show_alert(callback: CallbackQuery):
 async def timer_task(message, chat_id, word):
     await asyncio.sleep(60)
     if chat_id in active_game and active_game[chat_id]["word"] == word.lower():
-        await message.answer(f"⏰ **Время вышло!** Слово было: `{word.upper()}`", parse_mode="Markdown")
+        await message.answer(f"⏰ **Час вийшов!** Слово було: `{word.upper()}`", parse_mode="Markdown")
         active_game[chat_id]["word"] = None
 
 
