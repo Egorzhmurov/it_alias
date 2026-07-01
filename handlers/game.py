@@ -1,58 +1,104 @@
-import random, asyncio, sys, os
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
+import asyncio
+import random
 from aiogram import Router, F
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, \
+    InlineKeyboardButton
 from aiogram.filters import Command
-from words_list import IT_WORDS
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 
+
+# Стан для команди /newword
+class GameStates(StatesGroup):
+    waiting_for_new_word = State()
+
+
+IT_WORDS = ["Атрибут", "Бекенд", "Конструктор", "Фреймворк", "Репозиторій", "Асинхронність"]
 router = Router()
-active_game = {}
+active_games = {}
 
 
-@router.message(Command("alias"))
-async def cmd_alias(message: Message):
-    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Получить слово", callback_data="get_word")]])
-    await message.answer("🎮 **Игра IT Alias началась!** Нажми кнопку для старта:", reply_markup=kb,
+async def start_new_round(message: Message, starter_name: str, starter_id: int):
+    chat_id = message.chat.id
+    if chat_id in active_games:
+        try:
+            active_games[chat_id]["task"].cancel()
+        except:
+            pass
+
+    word = random.choice(IT_WORDS)
+
+    async def run_timer():
+        await asyncio.sleep(60)
+        if active_games.get(chat_id) and active_games.get(chat_id, {}).get("word") == word:
+            await message.answer(f"⏰ Час вийшов! Ніхто не вгадав.\nПравильне слово було: **{word.upper()}**",
+                                 parse_mode="Markdown")
+            await start_new_round(message, starter_name="Система", starter_id=0)
+
+    task = asyncio.create_task(run_timer())
+    active_games[chat_id] = {"word": word, "starter_name": starter_name, "starter_id": starter_id, "task": task}
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="👁 Подивитися", callback_data="show")]])
+    await message.answer(f"👤 Нове слово загадано! Ведучий: **{starter_name}**. ⌛️ 60 сек.", reply_markup=kb,
                          parse_mode="Markdown")
 
 
-@router.callback_query(F.data == "get_word")
-async def show_alert(callback: CallbackQuery):
-    chat_id = callback.message.chat.id
-    if chat_id not in active_game: active_game[chat_id] = {"used_words": [], "word": None, "task": None}
-
-    available = [w for w in IT_WORDS if w not in active_game[chat_id]["used_words"]]
-    if not available:
-        await callback.answer(text="⚠️ Список слов пуст! Сбрасываю...", show_alert=True)
-        active_game[chat_id]["used_words"] = [];
-        available = IT_WORDS
-
-    word = random.choice(available)
-    if active_game[chat_id].get("task"): active_game[chat_id]["task"].cancel()
-    active_game[chat_id].update({"word": word.lower(), "used_words": active_game[chat_id]["used_words"] + [word]})
-
-    await callback.answer(text=f"Твоё слово: {word.upper()}", show_alert=True)
-    await callback.message.answer(f"👤 @{callback.from_user.username} загадал слово! ⏳ Есть 60 секунд!")
-    active_game[chat_id]["task"] = asyncio.create_task(timer_task(callback.message, chat_id, word))
+@router.message(Command("start"))
+async def cmd_start(message: Message):
+    kb = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="Наступне слово")]], resize_keyboard=True,
+                             is_persistent=True)
+    await message.answer("Бот Alias готовий! Тисни кнопку.", reply_markup=kb)
 
 
-async def timer_task(message, chat_id, word):
-    await asyncio.sleep(60)
-    if chat_id in active_game and active_game[chat_id]["word"] == word.lower():
-        await message.answer(f"⏰ **Час вийшов!** Слово було: `{word.upper()}`", parse_mode="Markdown")
-        active_game[chat_id]["word"] = None
+# Команда для додавання нового слова
+@router.message(Command("newword"))
+async def cmd_new_word(message: Message, state: FSMContext):
+    await message.answer("✍️ Введи нове слово для гри:")
+    await state.set_state(GameStates.waiting_for_new_word)
+
+
+@router.message(GameStates.waiting_for_new_word)
+async def process_new_word(message: Message, state: FSMContext):
+    new_word = message.text.strip()
+    IT_WORDS.append(new_word)
+    await message.answer(f"✅ Слово '{new_word}' успішно додано до словника!")
+    await state.clear()
+
+
+@router.message(F.text == "Наступне слово")
+async def handle_next(message: Message):
+    await start_new_round(message, starter_name=message.from_user.first_name, starter_id=message.from_user.id)
+
+
+@router.callback_query(F.data == "show")
+async def show_word(callback: CallbackQuery):
+    data = active_games.get(callback.message.chat.id)
+    if data and callback.from_user.id == data["starter_id"]:
+        await callback.answer(f"Твоє слово: {data['word']}", show_alert=True)
+    else:
+        await callback.answer("❌ Це слово бачить лише ведучий!", show_alert=True)
 
 
 @router.message(F.text)
-async def check_answer(message: Message):
-    chat_id = message.chat.id
-    if chat_id not in active_game or active_game[chat_id]["word"] is None or message.text.startswith("/"): return
+async def check(message: Message):
+    if message.text == "Наступне слово": return
+    data = active_games.get(message.chat.id)
+    if data:
+        # Логіка вгадування
+        if message.text.strip().lower() == data["word"].strip().lower():
+            if message.from_user.id == data["starter_id"]: return
 
-    if message.text.lower() == active_game[chat_id]["word"]:
-        active_game[chat_id]["task"].cancel()
-        await message.answer(
-            f"✅ **Правильно!** @{message.from_user.username} угадал: `{active_game[chat_id]['word'].upper()}`!",
-            parse_mode="Markdown")
-        active_game[chat_id]["word"] = None
+            data["task"].cancel()
+            try:
+                await message.react(emoji="✅")
+            except:
+                pass
+
+            await message.answer(f"✅ ПРАВИЛЬНО! {message.from_user.first_name} вгадав: {data['word'].upper()}!")
+            await start_new_round(message, starter_name=message.from_user.first_name, starter_id=message.from_user.id)
+
+        elif message.from_user.id != data["starter_id"]:
+            try:
+                await message.react(emoji="❌")
+            except:
+                pass
