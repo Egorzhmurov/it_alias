@@ -20,7 +20,6 @@ active_games = {}
 
 # --- Keyboards ---
 
-# Main menu (Reply)
 def get_game_keyboard():
     return ReplyKeyboardMarkup(keyboard=[
         [KeyboardButton(text="Наступне слово")],
@@ -29,13 +28,11 @@ def get_game_keyboard():
     ], resize_keyboard=True, is_persistent=True)
 
 
-# Inline keyboard for deletion
 def get_delete_word_keyboard():
     keyboard = [[InlineKeyboardButton(text=word, callback_data=f"del_{word}")] for word in IT_WORDS]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
-# Inline button for show word alert
 def get_show_button():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="👁 Подивитися слово", callback_data="show_alert")]
@@ -136,19 +133,27 @@ async def handle_next(message: Message):
 
 @router.message(F.text)
 async def check(message: Message):
-    if message.text in ["Наступне слово", "➕ Додати слово", "➖ Видалити слово", "⏹ Зупинити гру"]: return
+    # Ігноруємо кнопки меню
+    if message.text in ["Наступне слово", "➕ Додати слово", "➖ Видалити слово", "⏹ Зупинити гру"]:
+        return
 
     data = active_games.get(message.chat.id)
     if data:
-        if message.text.strip().lower() == data["word"].strip().lower():
+        user_guess = message.text.strip().lower()
+        correct_word = data["word"].strip().lower()
+
+        if user_guess == correct_word:
             if message.from_user.id == data["starter_id"]: return
+
             data["task"].cancel()
             try:
                 await message.react(emoji="✅")
             except:
                 pass
+
             await message.answer(f"✅ ПРАВИЛЬНО! {message.from_user.first_name} вгадав: {data['word'].upper()}!")
             del active_games[message.chat.id]
+
         elif message.from_user.id != data["starter_id"]:
             try:
                 await message.react(emoji="❌")
