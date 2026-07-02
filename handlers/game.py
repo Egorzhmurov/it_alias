@@ -29,7 +29,7 @@ async def start_new_round(message: Message, starter_name: str, starter_id: int):
     word = random.choice(IT_WORDS)
 
     async def run_timer():
-        await asyncio.sleep(60)
+        await asyncio.sleep(300)
         if active_games.get(chat_id) and active_games.get(chat_id, {}).get("word") == word:
             await message.answer(f"⏰ Час вийшов! Ніхто не вгадав.\nПравильне слово було: **{word.upper()}**",
                                  parse_mode="Markdown")
@@ -95,7 +95,6 @@ async def check(message: Message):
                 pass
 
             await message.answer(f"✅ ПРАВИЛЬНО! {message.from_user.first_name} вгадав: {data['word'].upper()}!")
-            await start_new_round(message, starter_name=message.from_user.first_name, starter_id=message.from_user.id)
 
         elif message.from_user.id != data["starter_id"]:
             try:
