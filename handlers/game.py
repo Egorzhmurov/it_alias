@@ -8,7 +8,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 
-# States for FSM (only for adding words)
+# States for FSM
 class GameStates(StatesGroup):
     waiting_for_new_word = State()
 
@@ -23,7 +23,7 @@ active_games = {}
 # Main menu (Reply)
 def get_game_keyboard():
     return ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text="Наступне слово")],
+        [KeyboardButton(text="Наступне слово"), KeyboardButton(text="👁 Подивитися слово")],
         [KeyboardButton(text="➕ Додати слово"), KeyboardButton(text="➖ Видалити слово")],
         [KeyboardButton(text="⏹ Зупинити гру")]
     ], resize_keyboard=True, is_persistent=True)
@@ -65,7 +65,7 @@ async def cmd_start(message: Message):
     await message.answer("Бот Alias готовий! Обери дію:", reply_markup=get_game_keyboard())
 
 
-# --- Handlers for Actions ---
+# --- Handlers ---
 
 @router.message(F.text == "➕ Додати слово")
 async def cmd_new_word(message: Message, state: FSMContext):
@@ -99,6 +99,17 @@ async def process_delete_callback(callback: CallbackQuery):
     await callback.answer()
 
 
+@router.message(F.text == "👁 Подивитися слово")
+async def show_word_handler(message: Message):
+    data = active_games.get(message.chat.id)
+    if data and message.from_user.id == data["starter_id"]:
+        await message.answer(f"🤫 Твоє слово: **{data['word']}**", parse_mode="Markdown")
+    elif data:
+        await message.answer("❌ Це слово бачить лише ведучий!")
+    else:
+        await message.answer("❌ Зараз немає активної гри.")
+
+
 @router.message(F.text == "⏹ Зупинити гру")
 async def stop_game(message: Message):
     chat_id = message.chat.id
@@ -110,8 +121,6 @@ async def stop_game(message: Message):
         await message.answer("❌ Активна гра відсутня.")
 
 
-# --- Guessing Logic ---
-
 @router.message(F.text == "Наступне слово")
 async def handle_next(message: Message):
     await start_new_round(message, starter_name=message.from_user.first_name, starter_id=message.from_user.id)
@@ -119,7 +128,8 @@ async def handle_next(message: Message):
 
 @router.message(F.text)
 async def check(message: Message):
-    if message.text in ["Наступне слово", "➕ Додати слово", "➖ Видалити слово", "⏹ Зупинити гру"]: return
+    if message.text in ["Наступне слово", "👁 Подивитися слово", "➕ Додати слово", "➖ Видалити слово",
+                        "⏹ Зупинити гру"]: return
 
     data = active_games.get(message.chat.id)
     if data:
