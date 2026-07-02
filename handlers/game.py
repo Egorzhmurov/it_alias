@@ -39,7 +39,7 @@ async def start_new_round(message: Message, starter_name: str, starter_id: int):
     active_games[chat_id] = {"word": word, "starter_name": starter_name, "starter_id": starter_id, "task": task}
 
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="👁 Подивитися", callback_data="show")]])
-    await message.answer(f"👤 Нове слово загадано! Ведучий: **{starter_name}**. ⌛️ 60 сек.", reply_markup=kb,
+    await message.answer(f"👤 Нове слово загадано! Ведучий: **{starter_name}**. ⌛️ 5 хв.", reply_markup=kb,
                          parse_mode="Markdown")
 
 
