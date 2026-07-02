@@ -8,7 +8,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 
-# States for FSM
+# States
 class GameStates(StatesGroup):
     waiting_for_new_word = State()
 
@@ -23,16 +23,23 @@ active_games = {}
 # Main menu (Reply)
 def get_game_keyboard():
     return ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text="Наступне слово"), KeyboardButton(text="👁 Подивитися слово")],
+        [KeyboardButton(text="Наступне слово")],
         [KeyboardButton(text="➕ Додати слово"), KeyboardButton(text="➖ Видалити слово")],
         [KeyboardButton(text="⏹ Зупинити гру")]
     ], resize_keyboard=True, is_persistent=True)
 
 
-# Word selection for deletion (Inline)
+# Inline keyboard for deletion
 def get_delete_word_keyboard():
     keyboard = [[InlineKeyboardButton(text=word, callback_data=f"del_{word}")] for word in IT_WORDS]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+# Inline button for show word alert
+def get_show_button():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="👁 Подивитися слово", callback_data="show_alert")]
+    ])
 
 
 # --- Game Logic ---
@@ -50,14 +57,17 @@ async def start_new_round(message: Message, starter_name: str, starter_id: int):
     async def run_timer():
         await asyncio.sleep(300)
         if active_games.get(chat_id) and active_games.get(chat_id, {}).get("word") == word:
-            await message.answer(f"⏰ Час вийшов! Ніхто не вгадав.\nПравильне слово: **{word.upper()}**",
-                                 parse_mode="Markdown")
+            await message.answer(f"⏰ Час вийшов! Правильне слово: **{word.upper()}**", parse_mode="Markdown")
             if chat_id in active_games: del active_games[chat_id]
 
     task = asyncio.create_task(run_timer())
     active_games[chat_id] = {"word": word, "starter_name": starter_name, "starter_id": starter_id, "task": task}
 
-    await message.answer(f"👤 Нове слово загадано! Ведучий: **{starter_name}**. ⌛️ 5 хв.", parse_mode="Markdown")
+    await message.answer(
+        f"👤 Нове слово загадано! Ведучий: **{starter_name}**.",
+        reply_markup=get_show_button(),
+        parse_mode="Markdown"
+    )
 
 
 @router.message(Command("start"))
@@ -66,6 +76,15 @@ async def cmd_start(message: Message):
 
 
 # --- Handlers ---
+
+@router.callback_query(F.data == "show_alert")
+async def show_alert(callback: CallbackQuery):
+    data = active_games.get(callback.message.chat.id)
+    if data and callback.from_user.id == data["starter_id"]:
+        await callback.answer(f"Твоє слово: {data['word']}", show_alert=True)
+    else:
+        await callback.answer("❌ Це слово бачить лише ведучий!", show_alert=True)
+
 
 @router.message(F.text == "➕ Додати слово")
 async def cmd_new_word(message: Message, state: FSMContext):
@@ -99,17 +118,6 @@ async def process_delete_callback(callback: CallbackQuery):
     await callback.answer()
 
 
-@router.message(F.text == "👁 Подивитися слово")
-async def show_word_handler(message: Message):
-    data = active_games.get(message.chat.id)
-    if data and message.from_user.id == data["starter_id"]:
-        await message.answer(f"🤫 Твоє слово: **{data['word']}**", parse_mode="Markdown")
-    elif data:
-        await message.answer("❌ Це слово бачить лише ведучий!")
-    else:
-        await message.answer("❌ Зараз немає активної гри.")
-
-
 @router.message(F.text == "⏹ Зупинити гру")
 async def stop_game(message: Message):
     chat_id = message.chat.id
@@ -128,8 +136,7 @@ async def handle_next(message: Message):
 
 @router.message(F.text)
 async def check(message: Message):
-    if message.text in ["Наступне слово", "👁 Подивитися слово", "➕ Додати слово", "➖ Видалити слово",
-                        "⏹ Зупинити гру"]: return
+    if message.text in ["Наступне слово", "➕ Додати слово", "➖ Видалити слово", "⏹ Зупинити гру"]: return
 
     data = active_games.get(message.chat.id)
     if data:
